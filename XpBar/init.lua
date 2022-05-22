@@ -176,7 +176,7 @@ local DrawStuff = function()
     if options.xpEnableInfoTNL then
         imgui.Text(string.format("TNL   : %i", currLevelExp))
     end
- end
+end
 
 -- Drawing
 local function present()

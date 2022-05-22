@@ -6,6 +6,21 @@ local optionsLoaded, options = pcall(require, "XpBar.options")
 
 local optionsFileName = "addons/XpBar/options.lua"
 
+local function IsMenuOpen()
+    local menuOpen = 0x43
+    local menuState = _getMenuState()
+    return menuState == menuOpen
+end
+local function IsSymbolChatOpen()
+    local wordSelectOpen = 0x40
+    local menuState = _getMenuState()
+    return menuState == wordSelectOpen
+end
+local function IsMenuUnavailable()
+    local menuState = _getMenuState()
+    return menuState == -1
+end
+
 -- Constants
 local _PlayerArray = 0x00A94254
 local _PlayerMyIndex = 0x00A9C4F4
@@ -16,6 +31,9 @@ if optionsLoaded then
     options.configurationEnableWindow = options.configurationEnableWindow == nil and true or options.configurationEnableWindow
     options.enable = options.enable == nil and true or options.enable
     options.xpEnableWindow = options.xpEnableWindow == nil and true or options.xpEnableWindow
+    options.xpHideWhenMenu = options.xpHideWhenMenu == nil and true or options.xpHideWhenMenu
+    options.xpHideWhenSymbolChat = options.xpHideWhenSymbolChat == nil and true or options.xpHideWhenSymbolChat
+    options.xpHideWhenMenuUnavailable = options.xpHideWhenMenuUnavailable == nil and true or options.xpHideWhenMenuUnavailable
     options.xpNoTitleBar = options.xpNoTitleBar or ""
     options.xpNoResize = options.xpNoResize or ""
     options.xpNoMove = options.xpNoMove or ""
@@ -36,6 +54,9 @@ else
         configurationEnableWindow = true,
         enable = true,
         xpEnableWindow = true,
+        xpHideWhenMenu = false,
+        xpHideWhenSymbolChat = false,
+        xpHideWhenMenuUnavailable = false,
         xpNoTitleBar = "",
         xpNoResize = "",
         xpNoMove = "",
@@ -63,6 +84,9 @@ local function SaveOptions(options)
         io.write(string.format("    enable = %s,\n", tostring(options.enable)))
         io.write("\n")
         io.write(string.format("    xpEnableWindow = %s,\n", tostring(options.xpEnableWindow)))
+        io.write(string.format("    xpHideWhenMenu = %s,\n", tostring(options.xpHideWhenMenu)))
+        io.write(string.format("    xpHideWhenSymbolChat = %s,\n", tostring(options.xpHideWhenSymbolChat)))
+        io.write(string.format("    xpHideWhenMenuUnavailable = %s,\n", tostring(options.xpHideWhenMenuUnavailable)))
         io.write(string.format("    xpNoTitleBar = \"%s\",\n", options.xpNoTitleBar))
         io.write(string.format("    xpNoResize = \"%s\",\n", options.xpNoResize))
         io.write(string.format("    xpNoMove = \"%s\",\n", options.xpNoMove))
@@ -117,54 +141,42 @@ local DrawStuff = function()
     local myIndex = pso.read_u32(_PlayerMyIndex)
     local myAddress = pso.read_u32(_PlayerArray + 4 * myIndex)
     local pltData = pso.read_u32(_PLTPointer)
+    local myClass = pso.read_u8(myAddress + 0x961)
+    local myLevel = pso.read_u32(myAddress + 0xE44)
+    local myExp = pso.read_u32(myAddress + 0xE48)
 
-    -- Do the thing only if the pointer is not null
-    if myAddress == 0 then
-        if options.xpEnableInfo then
-            imgui.Text("Player data not found")
-        end
-    elseif pltData == 0 then
-        if options.xpEnableInfo then
-            imgui.Text("PLT data not found")
-        end
+    local pltLevels = pso.read_u32(pltData)
+    local pltClass = pso.read_u32(pltLevels + 4 * myClass)
+
+    local thisMaxLevelExp = pso.read_u32(pltClass + 0x0C * myLevel + 0x08)
+    local nextMaxLevelexp
+
+    if myLevel < 199 then
+        nextMaxLevelexp = pso.read_u32(pltClass + 0x0C * (myLevel + 1) + 0x08)
     else
-        local myClass = pso.read_u8(myAddress + 0x961)
-        local myLevel = pso.read_u32(myAddress + 0xE44)
-        local myExp = pso.read_u32(myAddress + 0xE48)
-
-        local pltLevels = pso.read_u32(pltData)
-        local pltClass = pso.read_u32(pltLevels + 4 * myClass)
-
-        local thisMaxLevelExp = pso.read_u32(pltClass + 0x0C * myLevel + 0x08)
-        local nextMaxLevelexp
-
-        if myLevel < 199 then
-            nextMaxLevelexp = pso.read_u32(pltClass + 0x0C * (myLevel + 1) + 0x08)
-        else
-            nextMaxLevelexp = thisMaxLevelExp
-        end
-
-        local thisLevelExp = myExp - thisMaxLevelExp
-        local nextLevelexp = nextMaxLevelexp - thisMaxLevelExp
-        local currLevelExp = nextMaxLevelexp - myExp
-        local levelProgress = 1
-        if nextLevelexp ~= 0 then
-            levelProgress = thisLevelExp / nextLevelexp
-        end
-
-        imguiProgressBar(levelProgress, options.xpBarColor)
-
-        if options.xpEnableInfoLevel then
-            imgui.Text(string.format("Lv    : %i", myLevel + 1))
-        end
-        if options.xpEnableInfoTotal then
-            imgui.Text(string.format("Total : %i", myExp))
-        end
-        if options.xpEnableInfoTNL then
-            imgui.Text(string.format("TNL   : %i", currLevelExp))
-        end
+        nextMaxLevelexp = thisMaxLevelExp
     end
-end
+
+    local thisLevelExp = myExp - thisMaxLevelExp
+    local nextLevelexp = nextMaxLevelexp - thisMaxLevelExp
+    local currLevelExp = nextMaxLevelexp - myExp
+    local levelProgress = 1
+    if nextLevelexp ~= 0 then
+        levelProgress = thisLevelExp / nextLevelexp
+    end
+
+    imguiProgressBar(levelProgress, options.xpBarColor)
+
+    if options.xpEnableInfoLevel then
+        imgui.Text(string.format("Lv    : %i", myLevel + 1))
+    end
+    if options.xpEnableInfoTotal then
+        imgui.Text(string.format("Total : %i", myExp))
+    end
+    if options.xpEnableInfoTNL then
+        imgui.Text(string.format("TNL   : %i", currLevelExp))
+    end
+ end
 
 -- Drawing
 local function present()
@@ -183,9 +195,17 @@ local function present()
         SaveOptions(options)
     end
 
-    -- Global enable here to let the configuration window work
+   -- Global enable here to let the configuration window work
     if options.enable == false then
         return
+    end
+
+    if options.xpEnableWindow == true
+        and options.xpHideWhenMenu == false
+        and options.xpHideWhenSymbolChat == false
+        and options.xpHideWhenMenuUnavailable == false
+    then
+        local windowName = "Experience Bar"
     end
 
     if options.xpTransparent then
